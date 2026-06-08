@@ -17,7 +17,7 @@ class AccountModel(Base):
     __tablename__ = "accounts"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    access_token = Column(String(TEXT), unique=True, nullable=False, index=True)
+    access_token = Column(TEXT, unique=True, nullable=False, index=True)
     data = Column(Text, nullable=False)  # JSON 格式存储完整账号数据
 
 
