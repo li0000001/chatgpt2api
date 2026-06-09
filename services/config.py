@@ -163,6 +163,58 @@ def _normalize_chat_completion_cache_settings(value: object) -> dict[str, object
     }
 
 
+def _apply_image_storage_env_overrides(settings: dict[str, object]) -> dict[str, object]:
+    """
+    通过环境变量覆盖 image_storage 设置，环境变量优先级高于 config.json。
+
+    支持的变量：
+    - IMAGE_STORAGE_ENABLED:        true / false
+    - IMAGE_STORAGE_MODE:           local / webdav / both
+    - IMAGE_STORAGE_WEBDAV_URL:     WebDAV 服务器地址
+    - IMAGE_STORAGE_WEBDAV_USERNAME: WebDAV 用户名
+    - IMAGE_STORAGE_WEBDAV_PASSWORD: WebDAV 密码
+    - IMAGE_STORAGE_WEBDAV_ROOT_PATH: WebDAV 根路径
+    - IMAGE_STORAGE_PUBLIC_BASE_URL:  图片公共访问 URL
+    """
+    result = dict(settings)
+
+    env_enabled = os.getenv("IMAGE_STORAGE_ENABLED")
+    if env_enabled is not None:
+        result["enabled"] = _normalize_bool(env_enabled, bool(result.get("enabled")))
+
+    env_mode = os.getenv("IMAGE_STORAGE_MODE")
+    if env_mode is not None:
+        mode = env_mode.strip().lower()
+        if mode in {"local", "webdav", "both"}:
+            result["mode"] = mode
+
+    env_url = os.getenv("IMAGE_STORAGE_WEBDAV_URL")
+    if env_url is not None:
+        result["webdav_url"] = env_url.strip().rstrip("/")
+
+    env_username = os.getenv("IMAGE_STORAGE_WEBDAV_USERNAME")
+    if env_username is not None:
+        result["webdav_username"] = env_username.strip()
+
+    env_password = os.getenv("IMAGE_STORAGE_WEBDAV_PASSWORD")
+    if env_password is not None:
+        result["webdav_password"] = env_password.strip()
+
+    env_root_path = os.getenv("IMAGE_STORAGE_WEBDAV_ROOT_PATH")
+    if env_root_path is not None:
+        result["webdav_root_path"] = env_root_path.strip().strip("/") or str(DEFAULT_IMAGE_STORAGE["webdav_root_path"])
+
+    env_public_url = os.getenv("IMAGE_STORAGE_PUBLIC_BASE_URL")
+    if env_public_url is not None:
+        result["public_base_url"] = env_public_url.strip().rstrip("/")
+
+    # 若环境变量明确禁用，则强制 mode=local
+    if not result.get("enabled"):
+        result["mode"] = "local"
+
+    return result
+
+
 def _validate_image_storage_settings(settings: dict[str, object]) -> None:
     if not _normalize_bool(settings.get("enabled"), False):
         return
@@ -446,7 +498,8 @@ class ConfigStore:
             next_data["backup"] = _normalize_backup_settings(next_data.get("backup"))
         if "image_storage" in next_data:
             next_data["image_storage"] = _normalize_image_storage_settings(next_data.get("image_storage"))
-            _validate_image_storage_settings(next_data["image_storage"])
+            # 验证时也要考虑环境变量覆盖后的有效值
+            _validate_image_storage_settings(_apply_image_storage_env_overrides(next_data["image_storage"]))
         if "chat_completion_cache" in next_data:
             next_data["chat_completion_cache"] = _normalize_chat_completion_cache_settings(
                 next_data.get("chat_completion_cache")
@@ -460,7 +513,8 @@ class ConfigStore:
         return _normalize_backup_settings(self.data.get("backup"))
 
     def get_image_storage_settings(self) -> dict[str, object]:
-        return _normalize_image_storage_settings(self.data.get("image_storage"))
+        settings = _normalize_image_storage_settings(self.data.get("image_storage"))
+        return _apply_image_storage_env_overrides(settings)
 
     def get_chat_completion_cache_settings(self) -> dict[str, object]:
         return _normalize_chat_completion_cache_settings(self.data.get("chat_completion_cache"))
